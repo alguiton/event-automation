@@ -25,7 +25,7 @@ class BaseScraper(ABC):
         pass
 
     def save(self, events: list[dict], table: str = "events"):
-        """Upsert events into Supabase."""
+        """Delete existing rows for this organisation then insert fresh data."""
         if not events:
             self.logger.info("No events to save.")
             return
@@ -37,8 +37,13 @@ class BaseScraper(ABC):
         if not valid:
             self.logger.info("No valid events to save.")
             return
-        self.logger.info(f"Saving {len(valid)} events to {table}...")
-        self.db.table(table).upsert(valid).execute()
+        # Delete old rows for this organisation so stale data is always replaced
+        org = valid[0].get("organisation")
+        if org:
+            self.logger.info(f"Deleting existing rows for organisation: {org}")
+            self.db.table(table).delete().eq("organisation", org).execute()
+        self.logger.info(f"Inserting {len(valid)} events into {table}...")
+        self.db.table(table).insert(valid).execute()
 
     def run(self):
         """Full pipeline: scrape then save."""
