@@ -12,10 +12,10 @@ class BaseScraper(ABC):
         self.logger = get_logger(self.__class__.__name__)
         self.db = get_supabase_client()
 
-    def fetch(self, url: str) -> BeautifulSoup:
+    def fetch(self, url: str, headers: dict = None) -> BeautifulSoup:
         """Fetch a URL and return a BeautifulSoup object."""
         self.logger.info(f"Fetching {url}")
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, timeout=15, headers=headers)
         response.raise_for_status()
         return BeautifulSoup(response.text, "html.parser")
 
