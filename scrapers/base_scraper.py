@@ -29,8 +29,16 @@ class BaseScraper(ABC):
         if not events:
             self.logger.info("No events to save.")
             return
-        self.logger.info(f"Saving {len(events)} events to {table}...")
-        self.db.table(table).upsert(events).execute()
+        # Drop rows missing required fields to avoid NOT NULL violations
+        valid = [e for e in events if e.get("event_name")]
+        skipped = len(events) - len(valid)
+        if skipped:
+            self.logger.warning(f"Skipping {skipped} events with missing event_name.")
+        if not valid:
+            self.logger.info("No valid events to save.")
+            return
+        self.logger.info(f"Saving {len(valid)} events to {table}...")
+        self.db.table(table).upsert(valid).execute()
 
     def run(self):
         """Full pipeline: scrape then save."""

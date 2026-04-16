@@ -1,18 +1,27 @@
 import re
 from datetime import datetime
+import requests
+from bs4 import BeautifulSoup
 from .base_scraper import BaseScraper
 
-# powerfulwomen.org.uk returns 403 for default requests.
-# We send browser-like headers to work around the block.
+# powerfulwomen.org.uk blocks server IPs with a 403.
+# We use a requests.Session with full browser headers to mimic a real browser.
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-GB,en;q=0.5",
-    "Referer": "https://powerfulwomen.org.uk/",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-GB,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Cache-Control": "max-age=0",
 }
 
 MONTHS = [
@@ -26,8 +35,22 @@ class PowerfulWomenScraper(BaseScraper):
     EVENTS_URL = "https://powerfulwomen.org.uk/events/"
     ORGANISATION = "Powerful Women"
 
+    def _session_fetch(self, url: str) -> BeautifulSoup:
+        """Fetch using a persistent session to carry cookies and avoid 403s."""
+        if not hasattr(self, "_session"):
+            self._session = requests.Session()
+            self._session.headers.update(HEADERS)
+            # Visit homepage first to pick up cookies
+            try:
+                self._session.get(self.BASE_URL, timeout=15)
+            except Exception:
+                pass
+        response = self._session.get(url, timeout=15)
+        response.raise_for_status()
+        return BeautifulSoup(response.text, "html.parser")
+
     def scrape(self) -> list[dict]:
-        soup = self.fetch(self.EVENTS_URL, headers=HEADERS)
+        soup = self._session_fetch(self.EVENTS_URL)
 
         seen = set()
         event_links = []
@@ -52,7 +75,7 @@ class PowerfulWomenScraper(BaseScraper):
 
     def _parse_event(self, url: str) -> dict | None:
         try:
-            soup = self.fetch(url, headers=HEADERS)
+            soup = self._session_fetch(url)
 
             # Event name — try h1 first, then h2
             name_tag = soup.find("h1") or soup.find("h2")

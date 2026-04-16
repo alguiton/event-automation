@@ -38,9 +38,14 @@ class WUNScraper(BaseScraper):
         try:
             soup = self.fetch(url)
 
-            # Event name
-            h2 = soup.find("h2")
-            event_name = h2.get_text(strip=True) if h2 else None
+            # Event name — try h1, h2, h3 in order
+            name_tag = soup.find("h1") or soup.find("h2") or soup.find("h3")
+            event_name = name_tag.get_text(strip=True) if name_tag else None
+
+            # Last resort: derive name from URL slug
+            if not event_name:
+                slug = url.rstrip("/").split("/")[-1]
+                event_name = slug.replace("-", " ").title()
 
             # Date and time live in <h4> tags
             start_date = None
