@@ -2,11 +2,13 @@ from .base_scraper import BaseScraper
 from .wun_scraper import WUNScraper
 from .powerfulwomen_scraper import PowerfulWomenScraper
 from .stemazing_scraper import STEmazingScraper
+from .wise_scraper import WISEScraper
+from .wes_scraper import WESScraper
 
 
 def run_all_scrapers():
     """Run all scrapers in sequence."""
-    for ScraperClass in [WUNScraper, PowerfulWomenScraper, STEmazingScraper]:
+    for ScraperClass in [WUNScraper, PowerfulWomenScraper, STEmazingScraper, WISEScraper, WESScraper]:
         try:
             ScraperClass().run()
         except Exception as e:

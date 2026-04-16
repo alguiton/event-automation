@@ -110,27 +110,28 @@ class WUNScraper(BaseScraper):
                 elif re.search(r"\d+(:\d+)?\s*(am|pm|noon)", text, re.IGNORECASE):
                     start_time, end_time = self._parse_time_range(text)
 
-            # Location: look for h3 "Location" heading then read following sibling
+            # Location: look for h3 "Location" heading then read first valid sibling
             location = None
             for h3 in soup.find_all("h3"):
                 if "location" in h3.get_text(strip=True).lower():
-                    # Gather all following siblings until the next h3
-                    parts = []
                     for sibling in h3.find_next_siblings():
                         if sibling.name == "h3":
                             break
                         text = sibling.get_text(strip=True)
-                        if text:
-                            parts.append(text)
-                    if parts:
-                        location = " | ".join(parts[:3])
+                        # Skip breadcrumbs (contain ») and empty/very long text
+                        if not text or "»" in text or "›" in text or len(text) > 150:
+                            continue
+                        location = text
+                        break
                     break
-            # Fallback: scan for "online" or "virtual" keywords
+            # Fallback: scan for online/virtual/zoom keywords
             if not location:
                 for tag in soup.find_all(["p", "span", "li"]):
-                    text = tag.get_text(strip=True).lower()
-                    if "online" in text or "virtual" in text:
-                        location = tag.get_text(strip=True)
+                    text = tag.get_text(strip=True)
+                    if not text or len(text) > 150:
+                        continue
+                    if any(kw in text.lower() for kw in ["online", "virtual", "zoom", "teams"]):
+                        location = text
                         break
 
             # Description: paragraphs after <h3>Information</h3>
