@@ -34,6 +34,43 @@ class WUNScraper(BaseScraper):
                 events.append(event)
         return events
 
+    def _parse_time_range(self, text: str):
+        """Parse a time string into (start_time, end_time). Returns (str|None, str|None)."""
+        # Normalise "Noon" → "12:00 pm"
+        text = re.sub(r"\bnoon\b", "12:00 pm", text, flags=re.IGNORECASE)
+        # Strip trailing punctuation
+        text = text.strip().rstrip(".")
+
+        # Pattern: "H[:MM] am/pm - H[:MM] am/pm"  (am/pm on both sides)
+        rng_both = re.match(
+            r"(\d+(?::\d+)?)\s*(am|pm)\s*[-–]\s*(\d+(?::\d+)?)\s*(am|pm)",
+            text, re.IGNORECASE,
+        )
+        if rng_both:
+            return (
+                f"{rng_both.group(1)} {rng_both.group(2)}".lower(),
+                f"{rng_both.group(3)} {rng_both.group(4)}".lower(),
+            )
+
+        # Pattern: "H[:MM] - H[:MM] am/pm"  (am/pm only at end)
+        rng_end = re.match(
+            r"(\d+(?::\d+)?)\s*[-–]\s*(\d+(?::\d+)?)\s*(am|pm)",
+            text, re.IGNORECASE,
+        )
+        if rng_end:
+            suffix = rng_end.group(3).lower()
+            return (
+                f"{rng_end.group(1)} {suffix}",
+                f"{rng_end.group(2)} {suffix}",
+            )
+
+        # Single time
+        single = re.search(r"\d+(?::\d+)?\s*(am|pm)", text, re.IGNORECASE)
+        if single:
+            return single.group(0).strip().lower(), None
+
+        return None, None
+
     def _parse_event(self, url: str) -> dict | None:
         try:
             soup = self.fetch(url)
@@ -68,27 +105,20 @@ class WUNScraper(BaseScraper):
                     except ValueError:
                         pass
 
-                # Time: "12-1:30 pm" or "12:00 pm" etc.
-                elif re.search(r"\d+[\s:-]", text) and re.search(r"(am|pm)", text, re.IGNORECASE):
-                    # Range: "12-1:30 pm" or "12:00-13:30"
-                    rng = re.match(
-                        r"(\d+(?::\d+)?)\s*[-–]\s*(\d+(?::\d+)?)\s*(am|pm)?",
-                        text,
-                        re.IGNORECASE,
-                    )
-                    if rng:
-                        start_time = rng.group(1)
-                        end_time = f"{rng.group(2)} {rng.group(3) or ''}".strip()
-                    else:
-                        start_time = text
+                # Time parsing — handles these formats:
+                # "12-1:30 pm", "5:30 pm - 8pm", "10:30am - 12 Noon", "11:30am"
+                elif re.search(r"\d+(:\d+)?\s*(am|pm|noon)", text, re.IGNORECASE):
+                    start_time, end_time = self._parse_time_range(text)
 
             # Location: first text node after <h3>Location</h3>
-            location = "Online"
+            # Default to None — only set "Online" if the location text says so
+            location = None
             for h3 in soup.find_all("h3"):
                 if "location" in h3.get_text(strip=True).lower():
                     nxt = h3.find_next_sibling()
                     if nxt:
-                        location = nxt.get_text(strip=True)
+                        loc_text = nxt.get_text(strip=True)
+                        location = loc_text if loc_text else None
                     break
 
             # Description: paragraphs after <h3>Information</h3>
