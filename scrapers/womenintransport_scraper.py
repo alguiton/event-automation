@@ -88,8 +88,10 @@ class WomenInTransportScraper(BaseScraper):
                 elif not location and len(text) < 150:
                     if not re.search(r"\d{4}", text) and not re.search(r"\d+:\d+", text):
                         if not any(m in text for m in MONTHS):
-                            # Filter out generic navigation text
-                            if len(text) > 4 and text not in ("Register", "Book Now", "Read more"):
+                            # Filter out generic/nav words and single-word category labels
+                            _skip = {"register", "book now", "read more", "events",
+                                     "news", "home", "about", "contact", "join"}
+                            if len(text) > 5 and text.lower() not in _skip:
                                 location = text
 
             # Fallback: look in <p> or <div> for date

@@ -61,16 +61,16 @@ class AFBEScraper(BaseScraper):
                         except ValueError:
                             continue
 
-                if not start_time and re.search(r"\d+(?::\d+)?\s*(am|pm)", text, re.IGNORECASE):
-                    rng = re.match(
-                        r"(\d+(?::\d+)?\s*(?:am|pm))\s*[-–]\s*(\d+(?::\d+)?\s*(?:am|pm))",
+                if not start_time and re.search(r"(?<!\d)\d{1,2}(?::\d{2})?\s*(am|pm)", text, re.IGNORECASE):
+                    rng = re.search(
+                        r"(?<!\d)(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*[-–]\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm))",
                         text, re.IGNORECASE,
                     )
                     if rng:
                         start_time = rng.group(1).lower().strip()
                         end_time = rng.group(2).lower().strip()
                     else:
-                        single = re.search(r"\d+(?::\d+)?\s*(am|pm)", text, re.IGNORECASE)
+                        single = re.search(r"(?<!\d)\d{1,2}(?::\d{2})?\s*(am|pm)", text, re.IGNORECASE)
                         if single:
                             start_time = single.group(0).lower().strip()
 

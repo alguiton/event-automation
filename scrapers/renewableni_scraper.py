@@ -98,14 +98,17 @@ class RenewableNIScraper(BaseScraper):
                                 start_time = re.sub(r"\.", ":", single.group(0)).lower()
 
                 # Location: standalone <p> with venue info, not a date/time line
-                if start_date and not location and len(text) < 200:
+                # Must be a direct <p> tag (not a parent container that merges org+address)
+                if start_date and not location and tag.name == "p" and len(text) < 200:
                     if not re.search(r"\d+[.:]\d+\s*(am|pm)", text, re.IGNORECASE):
                         if not any(m in text for m in MONTHS):
-                            if any(kw in text.lower() for kw in [
-                                "hotel", "centre", "hall", "arena", "belfast", "online", "virtual",
-                                "street", "road", "avenue", "suite", "building",
-                            ]):
-                                location = text
+                            if "renewableni" not in text.lower():
+                                if any(kw in text.lower() for kw in [
+                                    "hotel", "centre", "hall", "arena", "belfast", "online",
+                                    "virtual", "street", "road", "avenue", "suite", "building",
+                                    "square", "place", "house",
+                                ]):
+                                    location = text
 
             # Reject pages that look like non-events (no date found)
             if not start_date:

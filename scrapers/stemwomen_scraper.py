@@ -64,18 +64,18 @@ class STEMWomenScraper(BaseScraper):
                             continue
 
                 # Time: "1:00 pm - 4:30 pm BST" or "9:00am - 5:00pm"
-                if not start_time and re.search(r"\d+(?::\d+)?\s*(am|pm)", text, re.IGNORECASE):
-                    # Strip timezone suffix
+                # Use \d{1,2} (max 2 digits for hours) to avoid matching year digits
+                if not start_time and re.search(r"(?<!\d)\d{1,2}(?::\d{2})?\s*(am|pm)", text, re.IGNORECASE):
                     clean_t = re.sub(r"\s+[A-Z]{2,4}$", "", text.strip())
-                    rng = re.match(
-                        r"(\d+(?::\d+)?\s*(?:am|pm))\s*[-–]\s*(\d+(?::\d+)?\s*(?:am|pm))",
+                    rng = re.search(
+                        r"(?<!\d)(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*[-–]\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm))",
                         clean_t, re.IGNORECASE,
                     )
                     if rng:
                         start_time = rng.group(1).lower().strip()
                         end_time = rng.group(2).lower().strip()
                     else:
-                        single = re.search(r"\d+(?::\d+)?\s*(am|pm)", clean_t, re.IGNORECASE)
+                        single = re.search(r"(?<!\d)\d{1,2}(?::\d{2})?\s*(am|pm)", clean_t, re.IGNORECASE)
                         if single:
                             start_time = single.group(0).lower().strip()
 
@@ -87,10 +87,12 @@ class STEMWomenScraper(BaseScraper):
                     if text and len(text) < 200:
                         location = text
 
+            # Description: skip testimonial quotes (start with " or ')
             description = None
+            quote_chars = ('"', '\u201c', '\u2018', "'")
             for p in soup.find_all("p"):
                 text = p.get_text(strip=True)
-                if len(text) > 60:
+                if len(text) > 60 and not text.startswith(quote_chars):
                     description = text[:500]
                     break
 
