@@ -29,11 +29,28 @@ class BaseScraper(ABC):
         if not events:
             self.logger.info("No events to save.")
             return
-        # Drop rows missing required fields to avoid NOT NULL violations
-        valid = [e for e in events if e.get("event_name")]
+        from datetime import date
+        today = date.today()
+        # Drop rows missing required fields or with no/past date
+        valid = []
+        for e in events:
+            if not e.get("event_name"):
+                self.logger.warning(f"Skipping event with no name: {e.get('link')}")
+                continue
+            if not e.get("start_date"):
+                self.logger.warning(f"Skipping event with no date: {e.get('event_name')}")
+                continue
+            try:
+                if date.fromisoformat(e["start_date"]) < today:
+                    self.logger.info(f"Skipping past event: {e.get('event_name')} ({e['start_date']})")
+                    continue
+            except ValueError:
+                self.logger.warning(f"Skipping event with invalid date: {e.get('event_name')}")
+                continue
+            valid.append(e)
         skipped = len(events) - len(valid)
         if skipped:
-            self.logger.warning(f"Skipping {skipped} events with missing event_name.")
+            self.logger.warning(f"Skipped {skipped} events (no name, no date, or past).")
         if not valid:
             self.logger.info("No valid events to save.")
             return

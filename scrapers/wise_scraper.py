@@ -1,11 +1,12 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 from .base_scraper import BaseScraper
 
-MONTHS = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
-]
+MONTHS = {
+    "january": 1, "february": 2, "march": 3, "april": 4,
+    "may": 5, "june": 6, "july": 7, "august": 8,
+    "september": 9, "october": 10, "november": 11, "december": 12,
+}
 
 
 class WISEScraper(BaseScraper):
@@ -14,118 +15,100 @@ class WISEScraper(BaseScraper):
     ORGANISATION = "WISE Campaign"
 
     def scrape(self) -> list[dict]:
+        """Parse WISE events directly from the listing page."""
         soup = self.fetch(self.EVENTS_URL)
+        today = date.today()
 
-        seen = set()
-        event_links = []
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
-            full = href if href.startswith("http") else self.BASE_URL + href
-            # WISE uses /event/ (singular) for individual pages
-            if (
-                "/event/" in full
-                and full not in seen
-            ):
-                seen.add(full)
-                event_links.append(full)
-
-        self.logger.info(f"Found {len(event_links)} WISE events")
         events = []
-        for url in event_links:
-            event = self._parse_event(url)
-            if event:
-                events.append(event)
-        return events
+        # The listing page shows: "Month Day @ HH:MM am - HH:MM am" then h3>a for title
+        # Walk all text nodes looking for the date/time pattern
+        for tag in soup.find_all(string=re.compile(r"\w+ \d+ @ \d+:\d+", re.IGNORECASE)):
+            text = tag.strip()
+            m = re.match(
+                r"(\w+)\s+(\d+)\s*@\s*(\d+:\d+)\s*(am|pm)\s*[-–]\s*(\d+:\d+)\s*(am|pm)",
+                text, re.IGNORECASE,
+            )
+            if not m:
+                continue
 
-    def _parse_event(self, url: str) -> dict | None:
-        try:
-            soup = self.fetch(url)
+            month_str = m.group(1).lower()
+            if month_str not in MONTHS:
+                continue
 
-            # Event name
-            name_tag = soup.find("h1") or soup.find("h2")
-            event_name = name_tag.get_text(strip=True) if name_tag else None
-            if not event_name:
-                slug = url.rstrip("/").split("/")[-1]
-                event_name = slug.replace("-", " ").title()
+            month_num = MONTHS[month_str]
+            day = int(m.group(2))
+            year = today.year if month_num >= today.month else today.year + 1
 
-            start_date = None
-            start_time = None
-            end_time = None
+            try:
+                event_date = date(year, month_num, day)
+            except ValueError:
+                continue
+
+            # Skip past events
+            if event_date < today:
+                continue
+
+            start_time = f"{m.group(3)} {m.group(4)}".lower()
+            end_time = f"{m.group(5)} {m.group(6)}".lower()
+
+            # Find the nearest h3 > a after this text node for title + link
+            parent = tag.parent
+            event_name = None
+            link = None
+            for sibling in parent.find_next_siblings():
+                a = sibling.find("a") if sibling.name != "a" else sibling
+                h3 = sibling if sibling.name == "h3" else sibling.find("h3")
+                if h3:
+                    a = h3.find("a") or a
+                if a and a.get("href"):
+                    event_name = a.get_text(strip=True)
+                    href = a["href"]
+                    link = href if href.startswith("http") else self.BASE_URL + href
+                    break
+                # Stop if we hit another date pattern
+                if re.search(r"\w+ \d+ @ \d+:\d+", sibling.get_text(), re.IGNORECASE):
+                    break
+
+            if not event_name or not link:
+                continue
+
+            # Location — scan the next few siblings for ONLINE, venue, etc.
             location = None
-
-            for tag in soup.find_all(["h2", "h3", "h4", "p", "span", "time", "li", "div"]):
-                text = tag.get_text(strip=True)
-                if not text or len(text) > 200:
+            for sibling in parent.find_next_siblings():
+                stext = sibling.get_text(strip=True)
+                if not stext or len(stext) > 300:
                     continue
-
-                # Date
-                if not start_date and any(m in text for m in MONTHS):
-                    clean = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", text).strip()
-                    for fmt in ("%d %B %Y", "%B %d, %Y", "%d %B", "%B %d"):
-                        try:
-                            parsed = datetime.strptime(clean[:20], fmt)
-                            start_date = parsed.date().isoformat()
-                            break
-                        except ValueError:
-                            continue
-
-                # Time range "9:30 am - 4:30 pm"
-                if not start_time and re.search(r"\d+:\d+\s*(am|pm)", text, re.IGNORECASE):
-                    rng = re.match(
-                        r"(\d+:\d+)\s*(am|pm)\s*[-–]\s*(\d+:\d+)\s*(am|pm)",
-                        text, re.IGNORECASE,
-                    )
-                    if rng:
-                        start_time = f"{rng.group(1)} {rng.group(2)}".lower()
-                        end_time = f"{rng.group(3)} {rng.group(4)}".lower()
-                    else:
-                        single = re.search(r"\d+:\d+\s*(am|pm)", text, re.IGNORECASE)
-                        if single:
-                            start_time = single.group(0).strip().lower()
-
-            # Location — look for a tag labelled "Location" or "Venue"
-            for tag in soup.find_all(["h3", "h4", "strong", "dt"]):
-                if tag.get_text(strip=True).lower() in ("location", "venue", "where"):
-                    nxt = tag.find_next_sibling()
-                    if nxt:
-                        location = nxt.get_text(strip=True)
+                # Stop at next event block
+                if re.search(r"\w+ \d+ @ \d+:\d+", stext, re.IGNORECASE):
+                    break
+                if any(kw in stext.upper() for kw in ["ONLINE", "VIRTUAL", "ZOOM"]):
+                    location = "Online"
+                    break
+                # IET venue pattern
+                if "IET" in stext or re.search(r"\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b", stext):
+                    location = stext[:150]
                     break
 
-            # Fallback: scan for address-like content or online/virtual
-            if not location:
-                for tag in soup.find_all(["p", "span", "li", "dd"]):
-                    text = tag.get_text(strip=True)
-                    if not text or len(text) > 150:
-                        continue
-                    if any(kw in text.lower() for kw in ["online", "virtual", "zoom", "teams"]):
-                        location = text
-                        break
-                    # Simple heuristic: contains comma and looks like an address
-                    if "," in text and re.search(r"\b[A-Z]{1,2}\d", text):
-                        location = text
-                        break
-
-            # Description
+            # Description — first substantial paragraph after title
             description = None
-            for p in soup.find_all("p"):
-                text = p.get_text(strip=True)
-                if len(text) > 80:
-                    description = text[:500]
+            for sibling in parent.find_next_siblings():
+                stext = sibling.get_text(strip=True)
+                if len(stext) > 80 and not re.search(r"\w+ \d+ @ \d+:\d+", stext):
+                    description = stext[:500]
                     break
 
-            return {
+            events.append({
                 "event_name": event_name,
                 "organisation": self.ORGANISATION,
-                "start_date": start_date,
+                "start_date": event_date.isoformat(),
                 "start_time": start_time,
                 "end_time": end_time,
                 "location": location,
                 "event_type": "STEM Event",
                 "sector_tag": "Women in STEM",
-                "link": url,
+                "link": link,
                 "description": description,
-            }
+            })
 
-        except Exception as e:
-            self.logger.error(f"Failed to parse WISE event {url}: {e}")
-            return None
+        self.logger.info(f"Found {len(events)} WISE events")
+        return events

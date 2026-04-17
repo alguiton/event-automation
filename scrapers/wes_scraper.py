@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 from .base_scraper import BaseScraper
 
 MONTHS = [
@@ -62,13 +62,26 @@ class WESScraper(BaseScraper):
                     clean = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", text).strip()
                     # Handle ranges like "16-17 April 2026"
                     clean = re.sub(r"(\d+)-\d+\s", r"\1 ", clean)
-                    for fmt in ("%d %B %Y", "%B %d, %Y", "%d %B"):
+                    parsed = None
+                    for fmt in ("%d %B %Y", "%B %d, %Y"):
                         try:
                             parsed = datetime.strptime(clean[:20], fmt)
-                            start_date = parsed.date().isoformat()
                             break
                         except ValueError:
                             continue
+                    # Year-less formats — assign current or next year
+                    if not parsed:
+                        for fmt in ("%d %B", "%B %d"):
+                            try:
+                                p = datetime.strptime(clean[:15], fmt)
+                                today = date.today()
+                                year = today.year if p.month >= today.month else today.year + 1
+                                parsed = p.replace(year=year)
+                                break
+                            except ValueError:
+                                continue
+                    if parsed:
+                        start_date = parsed.date().isoformat()
 
                 if not start_time and re.search(r"\d+(:\d+)?\s*(am|pm)", text, re.IGNORECASE):
                     rng = re.match(
